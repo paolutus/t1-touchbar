@@ -24,3 +24,13 @@ venv/
 *.sock
 *.log
 scratch/
+
+# Out-of-tree kernel module build products
+/apple-ib-drv/*.o
+/apple-ib-drv/*.ko
+/apple-ib-drv/*.mod
+/apple-ib-drv/*.mod.c
+/apple-ib-drv/.*.cmd
+/apple-ib-drv/Module.symvers
+/apple-ib-drv/modules.order
+/apple-ib-drv/.tmp_versions/

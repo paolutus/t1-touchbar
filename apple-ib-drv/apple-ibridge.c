@@ -86,6 +86,18 @@ MODULE_PARM_DESC(skip_acpi_power,
 		"-1=auto (skip on MacBookPro13,*/14,*), 0=force-run (can freeze!), 1=force-skip");
 
 /*
+ * Explicit diagnostic override for ONE platform resume only. Never consulted
+ * by probe or suspend. Clear the request BEFORE entering AML: if SOCW hangs,
+ * the next boot retains the normal skip_acpi_power default.
+ * Arm through sysfs after boot; do not persist this in modprobe configuration.
+ */
+static bool test_resume_acpi_once;
+module_param(test_resume_acpi_once, bool, 0600);
+MODULE_PARM_DESC(test_resume_acpi_once,
+		"DANGEROUS diagnostic: run SOCW(1) on the next resume only, "
+		"overriding skip_acpi_power; can hard-freeze T1. Default false.");
+
+/*
  * Decide whether to skip the SOCW AML. Explicit 0/1 always win; -1 means "auto" — skip on
  * the T1 family by DMI, and skip when DMI is unreadable (the driver only runs on T1 HW, so
  * the safe direction is to skip). Used by every SOCW call site (probe, suspend, resume).
@@ -418,6 +430,13 @@ appleib_add_sub_dev(struct appleib_hid_dev_info *hdev_info,
 	sub_hdev->group = dev_id->group;
 	sub_hdev->vendor = dev_id->vendor;
 	sub_hdev->product = dev_id->product;
+	/*
+	 * The virtual Touch Bar still carries the parent's mixed descriptor.
+	 * Do not let HID scanning classify its display half as a sensor hub.
+	 * The ALS virtual device remains auto-classified independently.
+	 */
+	if (dev_id->product == USB_DEVICE_ID_IBRIDGE_TB)
+		sub_hdev->group = HID_GROUP_GENERIC;
 
 	sub_hdev->ll_driver = &appleib_ll_driver;
 
@@ -645,43 +664,62 @@ static void appleib_remove(struct platform_device *pdev)
 }
 #endif
 
-static int appleib_suspend(struct platform_device *pdev, pm_message_t message)
+static int appleib_suspend(struct device *dev)
 {
 	struct appleib_device *ib_dev;
 	int rc;
 
-	ib_dev = platform_get_drvdata(pdev);
+	ib_dev = dev_get_drvdata(dev);
+	dev_info(dev, "iBridge platform suspend callback\n");
 
 	/* same SOCW AML that hangs the T1 — honour the skip on suspend too */
 	if (!appleib_skip_acpi_power()) {
 		rc = acpi_execute_simple_method(ib_dev->asoc_socw, NULL, 0);
 		if (ACPI_FAILURE(rc))
-			dev_warn(&pdev->dev, "SOCW(0) failed: %s\n",
+			dev_warn(dev, "SOCW(0) failed: %s\n",
 				 acpi_format_exception(rc));
 	}
 
 	return 0;
 }
 
-static int appleib_resume(struct platform_device *pdev)
+static int appleib_resume(struct device *dev)
 {
 	struct appleib_device *ib_dev;
-	int rc;
+	acpi_status rc;
+	bool run_test;
 
-	ib_dev = platform_get_drvdata(pdev);
+	ib_dev = dev_get_drvdata(dev);
 
-	/* resume re-ran SOCW(1) unconditionally — the exact call that freezes at probe;
-	 * gate it the same way so a wake can't hard-lock the machine
-	 */
-	if (!appleib_skip_acpi_power()) {
+	/* Serialize with sysfs parameter writes and consume the one-shot request. */
+	kernel_param_lock(THIS_MODULE);
+	run_test = test_resume_acpi_once;
+	test_resume_acpi_once = false;
+	kernel_param_unlock(THIS_MODULE);
+	dev_info(dev, "iBridge platform resume callback (ACPI test=%d)\n", run_test);
+
+	if (run_test)
+		dev_warn(dev,
+			 "ACPI one-shot: entering SOCW(1); test already disarmed\n");
+
+	if (run_test || !appleib_skip_acpi_power()) {
 		rc = acpi_execute_simple_method(ib_dev->asoc_socw, NULL, 1);
 		if (ACPI_FAILURE(rc))
-			dev_warn(&pdev->dev, "SOCW(1) failed: %s\n",
+			dev_warn(dev, "SOCW(1) failed: %s\n",
+				 acpi_format_exception(rc));
+		if (run_test)
+			dev_warn(dev, "ACPI one-shot: SOCW(1) returned %s\n",
 				 acpi_format_exception(rc));
 	}
 
 	return 0;
 }
+
+/* ACPI PM domains dispatch through driver.pm, not legacy platform callbacks. */
+static const struct dev_pm_ops appleib_pm_ops = {
+	.suspend = appleib_suspend,
+	.resume = appleib_resume,
+};
 
 static const struct acpi_device_id appleib_acpi_match[] = {
 	{ "APP7777", 0 },
@@ -693,11 +731,10 @@ MODULE_DEVICE_TABLE(acpi, appleib_acpi_match);
 static struct platform_driver appleib_driver = {
 	.probe		= appleib_probe,
 	.remove		= appleib_remove,
-	.suspend	= appleib_suspend,
-	.resume		= appleib_resume,
 	.driver		= {
 		.name		  = "apple-ibridge",
 		.acpi_match_table = appleib_acpi_match,
+		.pm = &appleib_pm_ops,
 	},
 };
 

@@ -87,6 +87,15 @@ MODULE_PARM_DESC(idle_timeout, "Default touch bar idle timeout:\n"
 			       "    -1 - turn touch bar display on (does not turn off automatically)\n"
 			       "    -2 - disable touch bar completely");
 
+#ifdef CONFIG_PM
+/* Diagnostic only: arm through sysfs, never persist in modprobe configuration. */
+static bool test_skip_suspend_display_off_once;
+module_param(test_skip_suspend_display_off_once, bool, 0600);
+MODULE_PARM_DESC(test_skip_suspend_display_off_once,
+		"Skip only the display OFF report on the next T1 system suspend; "
+		"keep mode OFF and USB power bookkeeping unchanged. Default false.");
+#endif
+
 static int appletb_tb_def_dim_timeout = -2;
 module_param_named(dim_timeout, appletb_tb_def_dim_timeout, int, 0444);
 MODULE_PARM_DESC(dim_timeout, "Default touch bar dim timeout:\n"
@@ -278,6 +287,9 @@ static int appletb_set_tb_mode(struct appletb_device *tb_dev,
 
 	kfree(buf);
 
+	/* USB/HID writes return a byte count; the worker expects zero on success. */
+	if (rc >= 0)
+		return rc == (tb_dev->is_t1 ? 1 : 2) ? 0 : -EIO;
 	return rc;
 }
 
@@ -285,16 +297,9 @@ static int appletb_set_tb_disp(struct appletb_device *tb_dev,
 			       unsigned char disp)
 {
 	struct hid_report *report;
+	u8 *buf;
+	unsigned int len;
 	int rc;
-
-	/*
-	 * T1 has no separate display-control interface; the bar is driven
-	 * entirely by the mode-set (appletb_set_tb_mode), so display ops are
-	 * a no-op success here. This keeps the worker/idle paths from hitting
-	 * the NULL disp_field/disp_iface for T1.
-	 */
-	if (tb_dev->is_t1)
-		return 0;
 
 	if (!tb_dev->disp_iface.hdev)
 		return -ENOTCONN;
@@ -323,14 +328,29 @@ static int appletb_set_tb_disp(struct appletb_device *tb_dev,
 		tb_dev->tb_autopm_off =
 			appletb_disable_autopm(report->device);
 
-	hid_hw_request(tb_dev->disp_iface.hdev, report, HID_REQ_SET_REPORT);
+	/* Wait for the transfer result rather than treating a queued write as success. */
+	buf = hid_alloc_report_buf(report, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+	len = hid_report_len(report);
+	hid_output_report(report, buf);
+	rc = hid_hw_raw_request(tb_dev->disp_iface.hdev, report->id, buf, len,
+				report->type, HID_REQ_SET_REPORT);
+	kfree(buf);
+	if (rc >= 0 && rc != len)
+		rc = -EIO;
+	if (rc < 0) {
+		dev_err(tb_dev->log_dev, "Display command %u failed: %d\n", disp, rc);
+		return rc;
+	}
+	dev_info(tb_dev->log_dev, "Display command %u completed (%d bytes)\n", disp, rc);
 
 	if (disp == APPLETB_CMD_DISP_OFF && tb_dev->tb_autopm_off) {
 		hid_hw_power(tb_dev->disp_iface.hdev, PM_HINT_NORMAL);
 		tb_dev->tb_autopm_off = false;
 	}
 
-	return rc;
+	return 0;
 }
 
 static bool appletb_any_tb_key_pressed(struct appletb_device *tb_dev)
@@ -362,9 +382,12 @@ static void appletb_set_tb_worker(struct work_struct *work)
 	/* handle explicit mode-change request */
 	pending_mode = tb_dev->pnd_tb_mode;
 	pending_disp = tb_dev->pnd_tb_disp;
-	restore_autopm = tb_dev->restore_autopm;
+	restore_autopm = tb_dev->restore_autopm && tb_dev->tb_autopm_off;
 
 	spin_unlock_irqrestore(&tb_dev->tb_lock, flags);
+
+	if (restore_autopm)
+		appletb_disable_autopm(tb_dev->disp_field->report->device);
 
 	if (pending_mode != APPLETB_CMD_MODE_NONE)
 		rc1 = appletb_set_tb_mode(tb_dev, pending_mode);
@@ -373,9 +396,6 @@ static void appletb_set_tb_worker(struct work_struct *work)
 		msleep(25);
 	if (pending_disp != APPLETB_CMD_DISP_NONE)
 		rc2 = appletb_set_tb_disp(tb_dev, pending_disp);
-
-	if (restore_autopm && tb_dev->tb_autopm_off)
-		appletb_disable_autopm(tb_dev->disp_field->report->device);
 
 	spin_lock_irqsave(&tb_dev->tb_lock, flags);
 
@@ -554,21 +574,18 @@ static void appletb_update_touchbar_no_lock(struct appletb_device *tb_dev,
 	 * generally don't want to switch modes while a touch bar key is
 	 * pressed.
 	 */
-	if (appletb_get_cur_tb_mode(tb_dev) != want_mode &&
-	    !appletb_any_tb_key_pressed(tb_dev)) {
+	if (force || (appletb_get_cur_tb_mode(tb_dev) != want_mode &&
+		      !appletb_any_tb_key_pressed(tb_dev))) {
 		tb_dev->pnd_tb_mode = want_mode;
 		need_update = true;
 	}
 
-	if (appletb_get_cur_tb_disp(tb_dev) != want_disp &&
+	if (force || (appletb_get_cur_tb_disp(tb_dev) != want_disp &&
 	    (!appletb_any_tb_key_pressed(tb_dev) ||
-	     want_disp != APPLETB_CMD_DISP_OFF)) {
+	     want_disp != APPLETB_CMD_DISP_OFF))) {
 		tb_dev->pnd_tb_disp = want_disp;
 		need_update = true;
 	}
-
-	if (force)
-		need_update = true;
 
 	/* schedule the update if desired */
 	dev_dbg_ratelimited(tb_dev->log_dev,
@@ -1081,7 +1098,7 @@ static bool appletb_test_and_mark_active(struct appletb_device *tb_dev)
 	spin_lock_irqsave(&tb_dev->tb_lock, flags);
 
 	if (tb_dev->mode_iface.hdev &&
-	    (tb_dev->is_t1 || tb_dev->disp_iface.hdev) &&
+	    tb_dev->disp_iface.hdev &&
 	    !tb_dev->active) {
 		tb_dev->active = true;
 		activated = true;
@@ -1101,7 +1118,7 @@ static bool appletb_test_and_mark_inactive(struct appletb_device *tb_dev,
 	spin_lock_irqsave(&tb_dev->tb_lock, flags);
 
 	if (tb_dev->mode_iface.hdev &&
-	    (tb_dev->is_t1 || tb_dev->disp_iface.hdev) &&
+	    tb_dev->disp_iface.hdev &&
 	    tb_dev->active &&
 	    (hdev == tb_dev->mode_iface.hdev ||
 	     hdev == tb_dev->disp_iface.hdev)) {
@@ -1265,7 +1282,7 @@ static int appletb_probe(struct hid_device *hdev,
 			goto unreg_handler;
 		}
 
-		dev_dbg(tb_dev->log_dev, "Touchbar activated\n");
+		dev_info(tb_dev->log_dev, "Touchbar activated with mode and display interfaces\n");
 	}
 
 	return 0;
@@ -1330,6 +1347,7 @@ static int appletb_suspend(struct hid_device *hdev, pm_message_t message)
 	struct appletb_iface_info *iface_info;
 	unsigned long flags;
 	bool all_suspended = false;
+	bool skip_display_off = false;
 
 	if (message.event != PM_EVENT_SUSPEND &&
 	    message.event != PM_EVENT_FREEZE)
@@ -1374,14 +1392,30 @@ static int appletb_suspend(struct hid_device *hdev, pm_message_t message)
 		 * special casing between the two).
 		 */
 		if (message.event == PM_EVENT_SUSPEND) {
+			kernel_param_lock(THIS_MODULE);
+			skip_display_off = test_skip_suspend_display_off_once;
+			test_skip_suspend_display_off_once = false;
+			kernel_param_unlock(THIS_MODULE);
+
 			appletb_set_tb_mode(tb_dev, APPLETB_CMD_MODE_OFF);
-			appletb_set_tb_disp(tb_dev, APPLETB_CMD_DISP_OFF);
+			if (skip_display_off) {
+				dev_info(tb_dev->log_dev,
+					 "Suspend test: skipping display OFF once; mode OFF unchanged\n");
+				/* Match the PM release normally done by display OFF. */
+				if (tb_dev->tb_autopm_off && tb_dev->disp_iface.hdev) {
+					hid_hw_power(tb_dev->disp_iface.hdev, PM_HINT_NORMAL);
+					tb_dev->tb_autopm_off = false;
+				}
+			} else {
+				appletb_set_tb_disp(tb_dev, APPLETB_CMD_DISP_OFF);
+			}
 		}
 
 		spin_lock_irqsave(&tb_dev->tb_lock, flags);
 
 		tb_dev->cur_tb_mode = APPLETB_CMD_MODE_OFF;
-		tb_dev->cur_tb_disp = APPLETB_CMD_DISP_OFF;
+		if (!skip_display_off)
+			tb_dev->cur_tb_disp = APPLETB_CMD_DISP_OFF;
 
 		spin_unlock_irqrestore(&tb_dev->tb_lock, flags);
 
@@ -1393,7 +1427,7 @@ static int appletb_suspend(struct hid_device *hdev, pm_message_t message)
 	return 0;
 }
 
-static int appletb_reset_resume(struct hid_device *hdev)
+static int appletb_resume_common(struct hid_device *hdev, bool reset)
 {
 	struct appletb_device *tb_dev = hid_get_drvdata(hdev);
 	struct appletb_iface_info *iface_info;
@@ -1402,6 +1436,11 @@ static int appletb_reset_resume(struct hid_device *hdev)
 	spin_lock_irqsave(&tb_dev->tb_lock, flags);
 
 	iface_info = appletb_get_iface_info(tb_dev, hdev);
+	/* Runtime suspend is a no-op above; do not reinitialize on its resume. */
+	if (!iface_info || (!reset && !iface_info->suspended)) {
+		spin_unlock_irqrestore(&tb_dev->tb_lock, flags);
+		return 0;
+	}
 	if (iface_info)
 		iface_info->suspended = false;
 
@@ -1412,17 +1451,27 @@ static int appletb_reset_resume(struct hid_device *hdev)
 		 * preserved, so need explicitly restore that here.
 		 */
 		tb_dev->active = true;
-		tb_dev->restore_autopm = true;
+		tb_dev->restore_autopm |= reset;
 		tb_dev->last_event_time = ktime_get();
 
 		appletb_update_touchbar_no_lock(tb_dev, true);
 
-		dev_info(tb_dev->log_dev, "Touchbar resumed.\n");
+		dev_info(tb_dev->log_dev, "Touchbar restore queued (reset=%d)\n", reset);
 	}
 
 	spin_unlock_irqrestore(&tb_dev->tb_lock, flags);
 
 	return 0;
+}
+
+static int appletb_resume(struct hid_device *hdev)
+{
+	return appletb_resume_common(hdev, false);
+}
+
+static int appletb_reset_resume(struct hid_device *hdev)
+{
+	return appletb_resume_common(hdev, true);
 }
 #endif
 
@@ -1471,6 +1520,7 @@ static struct hid_driver appletb_hid_driver = {
 	.input_configured = appletb_input_configured,
 #ifdef CONFIG_PM
 	.suspend = appletb_suspend,
+	.resume = appletb_resume,
 	.reset_resume = appletb_reset_resume,
 #endif
 };
