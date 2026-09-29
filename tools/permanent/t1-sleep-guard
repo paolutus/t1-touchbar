@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source /usr/local/libexec/t1-sleep-common.sh
+state=/run/t1-sleep-guard
+
+load_state() {
+    local dev value
+    [[ -f "$state/ready" ]] || return 1
+    old_sleep=$(< "$state/sleep")
+    saved_kbd=$(< "$state/keyboard")
+    [[ "$old_sleep" == deep || "$old_sleep" == s2idle ]] || die 'Stato sleep salvato non valido.'
+    [[ "$saved_kbd" =~ ^[0-9]+$ && "$saved_kbd" -le 255 ]] || die 'Stato tastiera salvato non valido.'
+    for dev in "${pm_devices[@]}"; do
+        value=$(< "$state/$dev")
+        [[ "$value" == 0 || "$value" == 1 ]] || die 'Stato PM salvato non valido.'
+        saved_pm[$dev]=$value
+    done
+    # Ready is written before any hardware changes. On a partial failure,
+    # conservative restoration is safe for the already-validated empty trees.
+    changed=1
+    removed=1
+    kbd_changed=1
+}
+
+case ${1:-} in
+    prepare)
+        [[ ! -e "$state" && ! -L "$state" ]] || die 'Stato precedente presente: riavviare prima di sospendere.'
+        [[ ! -L /run/t1-protected-s2idle.lock ]] || die 'Lock inatteso.'
+        exec 9>/run/t1-protected-s2idle.lock
+        flock -n 9 || die 'Prova manuale già in corso.'
+        check_all service
+        save_settings
+        umask 077
+        mkdir -m 700 "$state"
+        put "$state/sleep" "$old_sleep"
+        put "$state/keyboard" "$saved_kbd"
+        for dev in "${pm_devices[@]}"; do put "$state/$dev" "${saved_pm[$dev]}"; done
+        put "$state/ready" 1
+        prepare_hardware
+        note 'Preparazione permanente completata: s2idle, tastiera spenta, SOCW escluso.'
+        ;;
+    restore)
+        [[ -d "$state" && ! -L "$state" ]] || exit 0
+        if [[ ! -f "$state/ready" ]]; then
+            die 'Snapshot incompleto, nessuna preparazione hardware eseguita: riavviare prima di riprovare.'
+        fi
+        load_state
+        if restore_hardware; then
+            # Delete only this transaction's small fixed snapshot files.
+            for dev in "${pm_devices[@]}"; do rm -- "$state/$dev"; done
+            rm -- "$state/sleep" "$state/keyboard" "$state/ready"
+            rmdir "$state"
+        else
+            die 'Ripristino incompleto: snapshot conservato; riavviare, non ripetere la sospensione.'
+        fi
+        ;;
+    *) die 'Uso interno: prepare|restore' ;;
+esac
