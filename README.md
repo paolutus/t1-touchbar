@@ -1,5 +1,18 @@
 # t1-touchbar
 
+## Verified MacBookPro14,2 suspend/resume procedure (local patched version)
+
+For the 2017 13-inch **MacBookPro14,2**, see the
+[complete Italian installation and recovery guide](docs/MACBOOKPRO14-2-SUSPEND-IT.md).
+This local version was tested on Kubuntu / Ubuntu 26.04.1, kernel
+`7.0.0-34-generic`, with working Touch Bar resume and keyboard-backlight handling.
+It combines patched drivers with guarded `s2idle` and temporary Thunderbolt
+removal/rescan. **Suspend is refused when attached peripherals are detected.**
+The guide includes exact versions, source checksums, fresh-install/update paths,
+manual validation, permanent setup and rollback. Use this modified copy, not an
+unverified upstream download. The generic instructions below are not the complete
+suspend/resume procedure for this machine.
+
 **Make your 2016–2017 Intel MacBook Pro (T1) Touch Bar work on Linux.**
 
 On the 2016–2017 MacBook Pros (MacBookPro13,x / 14,x) the Touch Bar is a **T1** ("iBridge") device.
@@ -17,8 +30,9 @@ kernel-6 work.
 
 > ⚠️ **Freeze safety.** On these models an ACPI power-on call (`ASOC.SOCW(1)`) **hard-freezes the
 > machine** (power-button recovery). The driver skips it by default on T1 hardware and the installer
-> pins `skip_acpi_power=1`, so the supported path is safe — the *only* way to hit the freeze is to
-> force it back on with `skip_acpi_power=0`. Don't. See [Troubleshooting](#troubleshooting).
+> pins `skip_acpi_power=1`. Keep that setting and never arm the local diagnostic
+> `test_resume_acpi_once` override: its resume test froze the reference MacBookPro14,2.
+> Skipping this method does not guarantee that all other suspend paths are safe.
 
 ## Install
 
@@ -48,6 +62,7 @@ To remove it: `sudo ./uninstall.sh` (then reboot).
 | Model | Kernel | Distro | Result |
 |---|---|---|---|
 | MacBookPro14,3 | 7.0.0-27-generic | Ubuntu 26.04 | ✅ builds, binds after reboot, keys + OSD work, webcam intact |
+| MacBookPro14,2 | 7.0.0-34-generic | Kubuntu / Ubuntu 26.04.1 | Local patched version: repeated guarded s2idle cycles; see the model-specific guide and peripheral restrictions |
 
 Other 13,x/14,x models and kernels should work but are unverified. DKMS rebuilds the module on kernel
 upgrades — but a broken rebuild fails **silently**, so after an upgrade check the bar still lights and
