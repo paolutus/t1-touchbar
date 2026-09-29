@@ -1,5 +1,7 @@
 # Prova temporanea s2idle — MacBookPro14,2
 
+Italiano | [English](PROTECTED-S2IDLE-EN.md)
+
 La combinazione è stata confermata funzionante sul MacBookPro14,2 di riferimento
 il 28 settembre 2026, con cicli manuali e gestione permanente. Non è una garanzia
 per ogni esemplare. Per replicarla dall'inizio su un altro Mac seguire la

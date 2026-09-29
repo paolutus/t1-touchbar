@@ -2,8 +2,8 @@
 
 ## Verified MacBookPro14,2 suspend/resume procedure (local patched version)
 
-For the 2017 13-inch **MacBookPro14,2**, see the
-[complete Italian installation and recovery guide](docs/MACBOOKPRO14-2-SUSPEND-IT.md).
+For the 2017 13-inch **MacBookPro14,2**, see the complete installation and recovery guide:
+[English](docs/MACBOOKPRO14-2-SUSPEND-EN.md) · [Italiano](docs/MACBOOKPRO14-2-SUSPEND-IT.md).
 This local version was tested on Kubuntu / Ubuntu 26.04.1, kernel
 `7.0.0-34-generic`, with working Touch Bar resume and keyboard-backlight handling.
 It combines patched drivers with guarded `s2idle` and temporary Thunderbolt

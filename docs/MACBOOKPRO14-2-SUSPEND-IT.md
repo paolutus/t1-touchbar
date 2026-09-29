@@ -1,5 +1,7 @@
 # MacBookPro14,2: Touch Bar e tastiera dopo sospensione su Kubuntu
 
+Italiano | [English](MACBOOKPRO14-2-SUSPEND-EN.md)
+
 Stato al **28 settembre 2026**: soluzione confermata dall'utente sul Mac di
 riferimento, con più cicli manuali e successiva integrazione permanente.
 È un workaround di sospensione, non una correzione della causa firmware dimostrata.

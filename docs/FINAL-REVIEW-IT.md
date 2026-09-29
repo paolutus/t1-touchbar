@@ -1,5 +1,7 @@
 # Verifica prima dei commit locali — 28 settembre 2026
 
+Italiano | [English](FINAL-REVIEW-EN.md)
+
 ## Ambito
 
 Revisione delle modifiche locali a driver, gestione suspend e documentazione.
