@@ -1,0 +1,12 @@
+[Unit]
+Description=Recover the T1 iBridge Touch Bar display HID interface
+After=multi-user.target
+ConditionPathExists=/sys/bus/hid/devices
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/t1-touchbar/t1-touchbar-enable
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

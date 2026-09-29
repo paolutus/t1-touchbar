@@ -196,6 +196,14 @@ is lit. If the bar is already black at boot, do not start resume testing.
 froze the reference Mac.** The diagnostic parameters remain in the code for
 traceability; they are not part of the solution.
 
+### D. Touch Bar black already at boot
+
+If `Touchbar activated with mode and display interfaces` is absent before the
+first suspend, this is not a resume failure: `hid-sensor-hub` may have claimed
+the iBridge display interface. Do not pin temporary HID numbers (`.0002`,
+`.0006`, and so on); use the late recovery described in the
+[boot-binding note](BOOT-BINDING-RECOVERY-EN.md).
+
 ## 6. Test the temporary configuration first
 
 Save your work and close applications. Disconnect all USB-C/Thunderbolt peripherals
@@ -363,7 +371,7 @@ live-reload modules.
 ## 11. Code tests and reporting a new machine
 
 ```bash
-bash -n tools/test-protected-s2idle.sh tools/install-permanent-sleep.sh tools/permanent/t1-sleep-guard
+bash -n tools/test-protected-s2idle.sh tools/install-permanent-sleep.sh tools/permanent/t1-sleep-guard tools/t1-touchbar-enable.sh tools/install-touchbar-boot-fix.sh
 bash tools/test-protected-s2idle-mocks.sh
 python3 tools/test-touchbar-update.py
 python3 tools/test-touchbar-suspend.py

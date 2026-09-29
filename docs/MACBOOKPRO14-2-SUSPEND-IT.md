@@ -198,6 +198,14 @@ schermo sia acceso. Se la barra è nera già al boot, non iniziare i test di res
 prova SOCW ha bloccato il Mac di riferimento.** I parametri diagnostici sono
 ancora presenti nel codice per tracciabilità, non sono parte della soluzione.
 
+### D. Touch Bar nera già al boot
+
+Se manca `Touchbar activated with mode and display interfaces` già prima della
+prima sospensione, non è un difetto del resume: `hid-sensor-hub` può aver preso
+l'interfaccia display iBridge. Non vincolare i numeri HID temporanei (`.0002`,
+`.0006`, ecc.); usare il recupero tardivo descritto nella
+[nota sul binding al boot](BOOT-BINDING-RECOVERY-IT.md).
+
 ## 6. Provare prima la configurazione temporanea
 
 Salvare e chiudere le applicazioni. Scollegare tutte le periferiche USB-C/Thunderbolt
@@ -367,7 +375,7 @@ ripristino, perché ricopierebbe i sorgenti nuovi. Conservare sempre
 ## 11. Test del codice e resoconto di una nuova macchina
 
 ```bash
-bash -n tools/test-protected-s2idle.sh tools/install-permanent-sleep.sh tools/permanent/t1-sleep-guard
+bash -n tools/test-protected-s2idle.sh tools/install-permanent-sleep.sh tools/permanent/t1-sleep-guard tools/t1-touchbar-enable.sh tools/install-touchbar-boot-fix.sh
 bash tools/test-protected-s2idle-mocks.sh
 python3 tools/test-touchbar-update.py
 python3 tools/test-touchbar-suspend.py
