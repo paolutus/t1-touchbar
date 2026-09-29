@@ -1,7 +1,5 @@
 # MacBookPro14,2: Touch Bar and keyboard backlight after suspend on Kubuntu
 
-[Italiano](MACBOOKPRO14-2-SUSPEND-IT.md) | English
-
 Status as of **September 28, 2026**: confirmed working by the user on the reference
 Mac, through multiple manual cycles and subsequent permanent integration.
 This is a suspend workaround, not a demonstrated fix for the underlying firmware

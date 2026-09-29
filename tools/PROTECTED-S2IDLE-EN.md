@@ -1,7 +1,5 @@
 # Temporary s2idle test — MacBookPro14,2
 
-[Italiano](PROTECTED-S2IDLE.md) | English
-
 This combination was confirmed working on the reference MacBookPro14,2 on
 September 28, 2026, with manual cycles and permanent handling. This is not a
 guarantee for every unit. To reproduce it from scratch on another Mac, follow

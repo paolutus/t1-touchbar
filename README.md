@@ -2,15 +2,13 @@
 
 ## Verified MacBookPro14,2 suspend/resume procedure (local patched version)
 
-For the 2017 13-inch **MacBookPro14,2**, see the complete installation and recovery guide:
-[English](docs/MACBOOKPRO14-2-SUSPEND-EN.md) · [Italiano](docs/MACBOOKPRO14-2-SUSPEND-IT.md).
+For the 2017 13-inch **MacBookPro14,2**, see the complete installation and recovery [guide](docs/MACBOOKPRO14-2-SUSPEND-EN.md).
 This local version was tested on Kubuntu / Ubuntu 26.04.1, kernel
 `7.0.0-34-generic`, with working Touch Bar resume and keyboard-backlight handling.
 It combines patched drivers with guarded `s2idle` and temporary Thunderbolt
 removal/rescan. **Suspend is refused when attached peripherals are detected.**
 It also includes a late-boot recovery for the iBridge display interface when
-`hid-sensor-hub` wins the HID binding race; see the [English boot-binding note](docs/BOOT-BINDING-RECOVERY-EN.md)
-or its [Italian version](docs/BOOT-BINDING-RECOVERY-IT.md).
+`hid-sensor-hub` wins the HID binding race; see the [boot-binding note](docs/BOOT-BINDING-RECOVERY-EN.md).
 The guide includes exact versions, source checksums, fresh-install/update paths,
 manual validation, permanent setup and rollback. Use this modified copy, not an
 unverified upstream download. The generic instructions below are not the complete

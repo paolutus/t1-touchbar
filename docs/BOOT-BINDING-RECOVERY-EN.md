@@ -1,7 +1,5 @@
 # Touch Bar boot recovery — MacBookPro14,2
 
-[Italiano](BOOT-BINDING-RECOVERY-IT.md) | English
-
 ## Problem and cause
 
 On the reference MacBookPro14,2, the Touch Bar was black already at boot, before suspend, with the correct DKMS driver and iBridge `05ac:8600` present.

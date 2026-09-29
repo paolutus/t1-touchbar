@@ -1,7 +1,5 @@
 # Review before local commits — September 28, 2026
 
-[Italiano](FINAL-REVIEW-IT.md) | English
-
 ## Scope
 
 Review of local driver, suspend-handling, and documentation changes. No installation,
